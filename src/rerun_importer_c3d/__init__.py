@@ -102,36 +102,33 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
 
     # ---- Log markers frame by frame ----
     for frame_idx in range(n_frames):
-        rr.set_time_sequence("frame", frame_idx)
-        rr.set_time_seconds("time", frame_idx / point_rate if point_rate > 0 else 0)
+        recording.set_time("frame", sequence=frame_idx)
+        recording.set_time("time", duration=frame_idx / point_rate if point_rate > 0 else 0)
 
         positions = marker_data[frame_idx]  # (n_markers, 3)
-        rr.log(
+        recording.log(
             f"{prefix}/markers",
             rr.Points3D(
                 positions,
                 labels=marker_names,
                 radii=np.full(n_markers, 0.01),
             ),
-            recording=recording,
         )
 
         # Per-marker residuals as scalar
         if residuals is not None and n_markers > 0:
             for m_idx, m_name in enumerate(marker_names):
-                # Skip unnamed markers
                 if not m_name.strip():
                     continue
-                rr.log(
+                recording.log(
                     f"{prefix}/markers/{m_name}/residual",
-                    rr.Scalar(float(residuals[frame_idx, m_idx])),
-                    recording=recording,
+                    rr.Scalars([float(residuals[frame_idx, m_idx])]),
                 )
 
     # ---- Log analog channels as time series ----
     try:
-        raw_analogs = c3d["data"]["analogs"]  # (1, n_channels, n_frames_analog)
-        analog_data = raw_analogs[0, :, :].T.astype(np.float64)  # (n_frames_analog, n_channels)
+        raw_analogs = c3d["data"]["analogs"]
+        analog_data = raw_analogs[0, :, :].T.astype(np.float64)
         analog_names = get_param_strings(c3d, ["ANALOG", "LABELS"])
         analog_units = get_param_strings(c3d, ["ANALOG", "UNITS"])
 
@@ -143,20 +140,13 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                 unit = analog_units[ch_idx] if ch_idx < len(analog_units) else ""
                 safe_name = ch_name.replace("/", "_")
                 for a_frame in range(n_analog_frames):
-                    rr.set_time_sequence("analog_frame", a_frame)
+                    recording.set_time("analog_frame", sequence=a_frame)
                     analog_time = a_frame / analog_rate if analog_rate > 0 else 0
-                    rr.set_time_seconds("analog_time", analog_time)
-                    rr.log(
+                    recording.set_time("analog_time", duration=analog_time)
+                    recording.log(
                         f"{prefix}/analogs/{safe_name}",
-                        rr.Scalar(float(analog_data[a_frame, ch_idx])),
-                        recording=recording,
+                        rr.Scalars([float(analog_data[a_frame, ch_idx])]),
                     )
-                    if unit:
-                        rr.log(
-                            f"{prefix}/analogs/{safe_name}/unit",
-                            rr.TextLog(unit),
-                            recording=recording,
-                        )
     except (KeyError, IndexError):
         pass
 
@@ -175,35 +165,32 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                 # Static geometry: corners
                 corners = plat["corners"].astype(np.float64)  # (3, 4)
                 corners_4 = corners.T  # (4, 3) — four 3D points
-                # Close the rectangle
                 line_strip = np.vstack([corners_4, corners_4[0:1]])
-                rr.log(
+                recording.log(
                     f"{fp_path}/corners",
                     rr.LineStrips3D([line_strip]),
                     static=True,
-                    recording=recording,
                 )
 
                 # Static: origin
                 origin = plat["origin"].astype(np.float64)
-                rr.log(
+                recording.log(
                     f"{fp_path}/origin",
                     rr.Points3D([origin], radii=0.02, labels=[f"{fp_name} origin"]),
                     static=True,
-                    recording=recording,
                 )
 
                 # Per-frame: force, moment, COP
-                forces = np.asarray(plat["force"]).T.astype(np.float64)       # (n_frames, 3)
-                moments = np.asarray(plat["moment"]).T.astype(np.float64)     # (n_frames, 3)
-                cop = np.asarray(plat["center_of_pressure"]).T.astype(np.float64)  # (n_frames, 3)
+                forces = np.asarray(plat["force"]).T.astype(np.float64)
+                moments = np.asarray(plat["moment"]).T.astype(np.float64)
+                cop = np.asarray(plat["center_of_pressure"]).T.astype(np.float64)
 
                 for f_idx in range(n_frames):
-                    rr.set_time_sequence("frame", f_idx)
+                    recording.set_time("frame", sequence=f_idx)
                     f_time = f_idx / point_rate if point_rate > 0 else 0
-                    rr.set_time_seconds("time", f_time)
+                    recording.set_time("time", duration=f_time)
 
-                    rr.log(
+                    recording.log(
                         f"{fp_path}/force",
                         rr.Arrows3D(
                             vectors=[forces[f_idx]],
@@ -211,14 +198,12 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                             radii=0.005,
                             labels=[f"Force ({f_idx})"],
                         ),
-                        recording=recording,
                     )
 
                     # COP as a point
-                    rr.log(
+                    recording.log(
                         f"{fp_path}/cop",
                         rr.Points3D([cop[f_idx]], radii=0.015, color=[255, 0, 0]),
-                        recording=recording,
                     )
     except (KeyError, IndexError) as e:
         print(f"Skipping force plates: {e}", file=sys.stderr)
@@ -237,12 +222,11 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                     context = event_contexts[e_idx] if e_idx < len(event_contexts) else ""
                     frame_num = int(event_time * point_rate)
 
-                    rr.set_time_sequence("frame", frame_num)
-                    rr.set_time_seconds("time", event_time)
-                    rr.log(
+                    recording.set_time("frame", sequence=frame_num)
+                    recording.set_time("time", duration=event_time)
+                    recording.log(
                         f"{prefix}/events/{e_label}",
                         rr.TextLog(f"{context} — {e_label} @ {event_time:.3f}s"),
-                        recording=recording,
                     )
     except (KeyError, IndexError):
         pass
@@ -260,12 +244,10 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
 - **Point rate**: {point_rate} Hz
 - **Analog rate**: {analog_rate} Hz
 - **Frame range**: {first_frame} – {last_frame}
-- **Analog channels**: {len(analog_names) if 'analog_names' in dir() else 0}
 """,
             media_type=rr.MediaType.MARKDOWN,
         ),
         static=True,
-        recording=recording,
     )
 
 
