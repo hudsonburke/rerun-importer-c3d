@@ -1,0 +1,17 @@
+[project]
+name = "rerun-importer-c3d"
+version = "0.1.0"
+description = "Rerun external importer for C3D biomechanics files"
+requires-python = ">=3.10"
+dependencies = [
+  "rerun-sdk>=0.34.0",
+  "ezc3d>=1.6.3",
+  "numpy>=1.26.0",
+]
+
+[project.scripts]
+rerun-importer-c3d = "rerun_importer_c3d:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
