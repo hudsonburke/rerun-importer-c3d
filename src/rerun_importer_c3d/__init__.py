@@ -138,7 +138,7 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                 if not ch_name.strip():
                     continue
                 unit = analog_units[ch_idx] if ch_idx < len(analog_units) else ""
-                safe_name = ch_name.replace("/", "_")
+                safe_name = ch_name.replace("/", "_").replace(" ", "_").replace(".", "_")
                 for a_frame in range(n_analog_frames):
                     recording.set_time("analog_frame", sequence=a_frame)
                     analog_time = a_frame / analog_rate if analog_rate > 0 else 0
@@ -205,8 +205,65 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                         f"{fp_path}/cop",
                         rr.Points3D([cop[f_idx]], radii=0.015, colors=[[255, 0, 0]]),
                     )
+
+                    # Moment as arrow
+                    recording.log(
+                        f"{fp_path}/moment",
+                        rr.Arrows3D(
+                            vectors=[moments[f_idx]],
+                            origins=[cop[f_idx]],
+                            radii=0.003,
+                            colors=[[0, 255, 0]],
+                        ),
+                    )
     except (KeyError, IndexError) as e:
         print(f"Skipping force plates: {e}", file=sys.stderr)
+
+    # ---- Log subject body measurements (PROCESSING params) ----
+    try:
+        proc = c3d["parameters"].get("PROCESSING", {})
+        if proc:
+            subject_path = f"{prefix}/subject/body_measurements"
+            # Determine subject name
+            subjects_names = c3d["parameters"].get("SUBJECTS", {}).get("NAMES", {}).get("value", [])
+            subject_name = str(subjects_names[0]) if subjects_names else "unknown"
+            recording.log(
+                f"{subject_path}/name",
+                rr.TextLog(subject_name),
+                static=True,
+            )
+            for pname, pval in proc.items():
+                if pname == "__METADATA__" or not hasattr(pval, "get"):
+                    continue
+                value = pval.get("value")
+                if value is not None and hasattr(value, "__len__") and len(value) == 1:
+                    v = float(value[0]) if value[0] is not None else None
+                    if v is not None:
+                        safe = pname.replace("/", "_").replace(" ", "_")
+                        recording.log(
+                            f"{subject_path}/{safe}",
+                            rr.Scalars([v]),
+                            static=True,
+                        )
+    except (KeyError, IndexError):
+        pass
+
+    # ---- Log analog descriptions ----
+    try:
+        analog_names = get_param_strings(c3d, ["ANALOG", "LABELS"])
+        analog_descs = get_param_strings(c3d, ["ANALOG", "DESCRIPTIONS"])
+        if analog_descs:
+            for ch_idx, ch_name in enumerate(analog_names):
+                desc = analog_descs[ch_idx] if ch_idx < len(analog_descs) else ""
+                if desc:
+                    safe_name = ch_name.replace("/", "_").replace(" ", "_").replace(".", "_")
+                    recording.log(
+                        f"{prefix}/analogs/{safe_name}/description",
+                        rr.TextLog(desc),
+                        static=True,
+                    )
+    except (KeyError, IndexError):
+        pass
 
     # ---- Log events ----
     try:
