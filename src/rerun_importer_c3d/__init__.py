@@ -279,10 +279,11 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                     context = event_contexts[e_idx] if e_idx < len(event_contexts) else ""
                     frame_num = int(event_time * point_rate)
 
+                    safe_label = e_label.replace(" ", "_").replace("/", "_")
                     recording.set_time("frame", sequence=frame_num)
                     recording.set_time("time", duration=event_time)
                     recording.log(
-                        f"{prefix}/events/{e_label}",
+                        f"{prefix}/events/{safe_label}",
                         rr.TextLog(f"{context} — {e_label} @ {event_time:.3f}s"),
                     )
     except (KeyError, IndexError):
@@ -292,7 +293,7 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
     first_frame = int(c3d["header"]["points"]["first_frame"])
     last_frame = int(c3d["header"]["points"]["last_frame"])
 
-    rr.log(
+    recording.log(
         f"{prefix}/info",
         rr.TextDocument(
             f"""# C3D File: {os.path.basename(path)}
@@ -345,12 +346,16 @@ data, analog signals, and events to the Rerun SDK, which streams them to
 the Viewer via stdout.
 
 Usage:
-    rerun-importer-c3d path/to/trial.c3d
+    rerun-importer-c3d path/to/trial.c3d          # single-file mode
+    rerun-importer-c3d batch /data/c3d -o /out    # batch mode
 
 Or simply drag the .c3d file onto the Rerun Viewer.
 """,
     )
-    parser.add_argument("filepath", type=str, help="Path to the file to load")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Single-file mode (positional filepath)
+    parser.add_argument("filepath", type=str, nargs="?", help="Path to the file to load")
     parser.add_argument("--application-id", type=str, help="Recommended ID for the application")
     parser.add_argument("--opened-application-id", type=str, help="Optional recommended ID for the application")
     parser.add_argument("--recording-id", type=str, help="Optional recommended ID for the recording")
@@ -359,12 +364,27 @@ Or simply drag the .c3d file onto the Rerun Viewer.
     parser.add_argument("--static", action="store_true", default=False, help="Optionally mark data as static")
     parser.add_argument("--time", type=str, action="append", help="Optional timestamps (e.g. `--time sim_time=1709203426`)")
     parser.add_argument("--sequence", type=str, action="append", help="Optional sequences (e.g. `--sequence sim_frame=42`)")
+
+    # Batch subcommand
+    from .batch import add_subparser
+    add_subparser(subparsers)
+
     return parser
 
 
 def main() -> None:
     parser = build_parser()
     args = parser.parse_args()
+
+    # Route to batch subcommand
+    if args.command == "batch":
+        args.func(args)
+        return
+
+    # Single-file importer mode
+    if not args.filepath:
+        parser.print_help()
+        sys.exit(1)
 
     # Inform the Rerun Viewer that we don't support this file
     if not os.path.isfile(args.filepath) or not args.filepath.lower().endswith(".c3d"):
