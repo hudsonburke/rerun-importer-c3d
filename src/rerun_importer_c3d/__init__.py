@@ -203,7 +203,7 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
                     # COP as a point
                     recording.log(
                         f"{fp_path}/cop",
-                        rr.Points3D([cop[f_idx]], radii=0.015, color=[255, 0, 0]),
+                        rr.Points3D([cop[f_idx]], radii=0.015, colors=[[255, 0, 0]]),
                     )
     except (KeyError, IndexError) as e:
         print(f"Skipping force plates: {e}", file=sys.stderr)
