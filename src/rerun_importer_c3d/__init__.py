@@ -76,8 +76,21 @@ def extract_analog_rate(c3d: ezc3d.c3d) -> float:
 # Rerun logging
 # ---------------------------------------------------------------------------
 
-def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
-    """Parse a C3D file and log its contents to Rerun."""
+def log_c3d(path: str, prefix: str, recording: rr.RecordingStream, skip_body_measurements: bool = False) -> None:
+    """Parse a C3D file and log its contents to Rerun.
+
+    Parameters
+    ----------
+    path : str
+        Path to the C3D file.
+    prefix : str
+        Entity path prefix (e.g. "BAA01/trials/Baseline_Walk01").
+    recording : rr.RecordingStream
+        The Rerun recording to log to.
+    skip_body_measurements : bool
+        If True, skip logging subject body measurements. Used in batch
+        mode where measurements are logged at the subject level instead.
+    """
     c3d = ezc3d.c3d(path, extract_forceplat_data=True)
 
     point_rate = float(get_param(c3d, ["POINT", "RATE"], default=0.0))
@@ -220,33 +233,34 @@ def log_c3d(path: str, prefix: str, recording: rr.RecordingStream) -> None:
         print(f"Skipping force plates: {e}", file=sys.stderr)
 
     # ---- Log subject body measurements (PROCESSING params) ----
-    try:
-        proc = c3d["parameters"].get("PROCESSING", {})
-        if proc:
-            subject_path = f"{prefix}/subject/body_measurements"
-            # Determine subject name
-            subjects_names = c3d["parameters"].get("SUBJECTS", {}).get("NAMES", {}).get("value", [])
-            subject_name = str(subjects_names[0]) if subjects_names else "unknown"
-            recording.log(
-                f"{subject_path}/name",
-                rr.TextLog(subject_name),
-                static=True,
-            )
-            for pname, pval in proc.items():
-                if pname == "__METADATA__" or not hasattr(pval, "get"):
-                    continue
-                value = pval.get("value")
-                if value is not None and hasattr(value, "__len__") and len(value) == 1:
-                    v = float(value[0]) if value[0] is not None else None
-                    if v is not None:
-                        safe = pname.replace("/", "_").replace(" ", "_")
-                        recording.log(
-                            f"{subject_path}/{safe}",
-                            rr.Scalars([v]),
-                            static=True,
-                        )
-    except (KeyError, IndexError):
-        pass
+    if not skip_body_measurements:
+        try:
+            proc = c3d["parameters"].get("PROCESSING", {})
+            if proc:
+                subject_path = f"{prefix}/subject/body_measurements"
+                # Determine subject name
+                subjects_names = c3d["parameters"].get("SUBJECTS", {}).get("NAMES", {}).get("value", [])
+                subject_name = str(subjects_names[0]) if subjects_names else "unknown"
+                recording.log(
+                    f"{subject_path}/name",
+                    rr.TextLog(subject_name),
+                    static=True,
+                )
+                for pname, pval in proc.items():
+                    if pname == "__METADATA__" or not hasattr(pval, "get"):
+                        continue
+                    value = pval.get("value")
+                    if value is not None and hasattr(value, "__len__") and len(value) == 1:
+                        v = float(value[0]) if value[0] is not None else None
+                        if v is not None:
+                            safe = pname.replace("/", "_").replace(" ", "_")
+                            recording.log(
+                                f"{subject_path}/{safe}",
+                                rr.Scalars([v]),
+                                static=True,
+                            )
+        except (KeyError, IndexError):
+            pass
 
     # ---- Log analog descriptions ----
     try:
